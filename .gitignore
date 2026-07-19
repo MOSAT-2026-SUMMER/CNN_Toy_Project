@@ -19,6 +19,8 @@ checkpoints/
 # Jupyter
 .ipynb_checkpoints/
 
+project_guide.html
+
 # OS / editor
 .DS_Store
 Thumbs.db
