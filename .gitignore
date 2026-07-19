@@ -1,0 +1,26 @@
+# Data (raw videos + extracted frames — too large for git)
+data/*
+!data/*/
+!data/**/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+env/
+
+# Checkpoints / model weights
+checkpoints/
+*.pt
+*.pth
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
