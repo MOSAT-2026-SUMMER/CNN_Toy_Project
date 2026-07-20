@@ -1,7 +1,11 @@
 # Data (raw videos + extracted frames — too large for git)
 data/*
 !data/*/
-!data/**/.gitkeep
+!data/*/.gitkeep
+data/*/*
+!data/*/*/
+!data/*/*/.gitkeep
+data/*/*/*
 
 # Python
 __pycache__/
