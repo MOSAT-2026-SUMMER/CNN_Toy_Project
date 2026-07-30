@@ -17,7 +17,7 @@ from src.model import DrunkSoberNet
 from src.dataset import VideoDataset  # returns ([T, 3, 224, 224], label) per item
 
 # ---- Paths (avoid hardcoding — Drive mount path differs per person/session) ----
-DATA_ROOT = "/content/drive/MyDrive/drunk_sober_project/data"
+DATA_ROOT = "/content/drive/MyDrive/MOSAT_CNN/data"
 FRAMES_DIR = os.path.join(DATA_ROOT, "frames")
 CHECKPOINT_DIR = "/content/checkpoints"
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
