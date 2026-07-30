@@ -48,6 +48,24 @@ frame_transform = transforms.Compose([
 SPLIT_SEED = 42
 VAL_RATIO = 0.2
 
+# Videos have differing frame counts (e.g. 99 vs 100) which breaks default
+# batch collation. Every item is resampled to this many frames so tensors
+# stack cleanly into a batch.
+NUM_FRAMES = 32
+
+
+def _sample_frame_paths(frame_paths, num_frames=NUM_FRAMES):
+    """
+    Pick `num_frames` paths evenly spaced across the clip (with repeats if
+    the clip is shorter than num_frames), preserving time order.
+    """
+    n = len(frame_paths)
+    if n == 0:
+        raise RuntimeError("Got an empty frame list — check preprocessing output.")
+
+    indices = [round(i * (n - 1) / (num_frames - 1)) for i in range(num_frames)]
+    return [frame_paths[i] for i in indices]
+
 
 def frames_to_tensor(frame_paths):
     """
@@ -150,8 +168,9 @@ class VideoDataset(Dataset):
             f for f in os.listdir(video_dir) if f.lower().endswith((".jpg", ".png"))
         )
         frame_paths = [os.path.join(video_dir, f) for f in frame_files]
+        frame_paths = _sample_frame_paths(frame_paths)
 
-        sequence = frames_to_tensor(frame_paths)  # [T, 3, 224, 224]
+        sequence = frames_to_tensor(frame_paths)  # [NUM_FRAMES, 3, 224, 224]
         return sequence, label
 
 
