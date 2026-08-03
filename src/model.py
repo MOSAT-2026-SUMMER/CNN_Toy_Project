@@ -36,6 +36,11 @@ class DrunkSoberNet(nn.Module):
             nn.Linear(64, 1),  # single logit; do NOT apply sigmoid here
         )
 
+        # Regularizes the GRU's output directly — the head's dropout above only
+        # regularizes the final dense layer, not the GRU (the only trainable
+        # part during Phase 1, where it's prone to overfitting first).
+        self.dropout = nn.Dropout(dropout)
+
     def forward(self, x):
         # x: [B, T, 3, 224, 224]
         B, T, C, H, W = x.shape
@@ -47,7 +52,7 @@ class DrunkSoberNet(nn.Module):
 
         # GRU consumes the sequence; h_n is the final hidden state
         _, h_n = self.gru(feats)          # h_n: [gru_layers, B, hidden_size]
-        out = self.head(h_n[-1])          # [B, 1]
+        out = self.head(self.dropout(h_n[-1]))  # [B, 1]
 
         return out.squeeze(-1)            # [B] — raw logits
 

@@ -31,6 +31,7 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
+from torchvision.transforms import functional as TF
 
 LABEL_MAP = {"sober": 0, "drunk": 1}
 
@@ -67,13 +68,16 @@ def _sample_frame_paths(frame_paths, num_frames=NUM_FRAMES):
     return [frame_paths[i] for i in indices]
 
 
-def frames_to_tensor(frame_paths):
+def frames_to_tensor(frame_paths, hflip=False):
     """
     Load an ordered list of frame image paths and stack them into a
     single sequence tensor.
 
     Args:
         frame_paths: list[str], already sorted in time order
+        hflip: if True, horizontally flip every frame (same flip applied to
+            the whole sequence — must be decided once per video, never
+            per-frame, or it breaks the temporal signal the GRU relies on)
 
     Returns:
         torch.Tensor of shape [T, 3, 224, 224]
@@ -81,6 +85,8 @@ def frames_to_tensor(frame_paths):
     frames = []
     for path in frame_paths:
         img = Image.open(path).convert("RGB")
+        if hflip:
+            img = TF.hflip(img)
         frames.append(frame_transform(img))
     return torch.stack(frames, dim=0)  # [T, 3, 224, 224]
 
@@ -188,8 +194,10 @@ class VideoDataset(Dataset):
 
         if split == "train":
             self.samples = train_samples
+            self.augment = True
         elif split == "val":
             self.samples = val_samples
+            self.augment = False
         else:
             raise ValueError(f"split must be 'train' or 'val', got '{split}'")
 
@@ -200,11 +208,12 @@ class VideoDataset(Dataset):
             )
 
     @classmethod
-    def from_samples(cls, samples):
+    def from_samples(cls, samples, augment=False):
         """Build a dataset directly from a (video_dir, label_idx) list, bypassing
         the frames_dir scan + split — used for k-fold CV folds."""
         instance = cls.__new__(cls)
         instance.samples = samples
+        instance.augment = augment
         return instance
 
     def __len__(self):
@@ -219,7 +228,11 @@ class VideoDataset(Dataset):
         frame_paths = [os.path.join(video_dir, f) for f in frame_files]
         frame_paths = _sample_frame_paths(frame_paths)
 
-        sequence = frames_to_tensor(frame_paths)  # [NUM_FRAMES, 3, 224, 224]
+        # Decided once per video (not per frame) — flipping frames independently
+        # would inject a physically impossible mid-clip mirror flip and corrupt
+        # the temporal signal the GRU relies on.
+        hflip = self.augment and random.random() < 0.5
+        sequence = frames_to_tensor(frame_paths, hflip=hflip)  # [NUM_FRAMES, 3, 224, 224]
         return sequence, label
 
 
@@ -239,7 +252,10 @@ def get_kfold_datasets(frames_dir, k, seed=SPLIT_SEED):
 
     folds = _stratified_kfold_splits(all_samples, k, seed)
     return [
-        (VideoDataset.from_samples(train_samples), VideoDataset.from_samples(val_samples))
+        (
+            VideoDataset.from_samples(train_samples, augment=True),
+            VideoDataset.from_samples(val_samples, augment=False),
+        )
         for train_samples, val_samples in folds
     ]
 
