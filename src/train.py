@@ -47,6 +47,7 @@ def run_epoch(model, loader, criterion, optimizer=None):
     model.train() if is_train else model.eval()
 
     total_loss, correct, total = 0.0, 0, 0
+    pred_pos, pred_neg = 0, 0  # tallies how many 1s vs 0s the model actually predicts
 
     with torch.set_grad_enabled(is_train):
         for sequences, labels in loader:
@@ -65,9 +66,12 @@ def run_epoch(model, loader, criterion, optimizer=None):
             preds = (torch.sigmoid(logits) > 0.5).float()
             correct += (preds == labels).sum().item()
             total += labels.size(0)
+            pred_pos += preds.sum().item()
+            pred_neg += (preds == 0).sum().item()
 
     avg_loss = total_loss / total
     accuracy = correct / total
+    print(f"    preds: 1={int(pred_pos)} 0={int(pred_neg)} (total={total})")
     return avg_loss, accuracy
 
 
