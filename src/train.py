@@ -5,16 +5,24 @@ Two-phase fine-tuning:
   Phase 1: freeze ResNet18 backbone, train GRU + head only
   Phase 2: unfreeze layer4, fine-tune with a lower learning rate
 
+Runs stratified K-fold cross-validation (see dataset.get_kfold_datasets):
+each fold trains a fresh model from scratch and reports its best val
+accuracy; the final summary is the mean +/- std across folds. This
+matters more than a single fixed split here because the dataset is
+small (tens of videos), so one split can easily be lucky/unlucky.
+
 Run this from a thin Colab notebook — this file holds the actual logic.
 """
 
 import os
+import statistics
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from src.model import DrunkSoberNet
-from src.dataset import VideoDataset  # returns ([T, 3, 224, 224], label) per item
+from src.dataset import get_kfold_datasets  # returns ([T, 3, 224, 224], label) per item
 
 # ---- Paths (avoid hardcoding — Drive mount path differs per person/session) ----
 DATA_ROOT = "/content/drive/MyDrive/MOSAT_CNN/data"
@@ -28,6 +36,7 @@ PHASE1_EPOCHS = 15
 PHASE2_EPOCHS = 10
 PHASE1_LR = 1e-3
 PHASE2_LR = 1e-4
+K_FOLDS = 5
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
@@ -61,15 +70,8 @@ def run_epoch(model, loader, criterion, optimizer=None):
     return avg_loss, accuracy
 
 
-def main():
-    # ---- Data ----
-    train_dataset = VideoDataset(FRAMES_DIR, split="train")
-    val_dataset = VideoDataset(FRAMES_DIR, split="val")
-
-    train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
-
-    # ---- Model ----
+def train_fold(train_loader, val_loader, checkpoint_path):
+    """Two-phase fine-tune of a fresh model on one fold. Returns best val accuracy."""
     model = DrunkSoberNet().to(DEVICE)
     criterion = nn.BCEWithLogitsLoss()
 
@@ -94,7 +96,7 @@ def main():
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            torch.save(model.state_dict(), os.path.join(CHECKPOINT_DIR, "best.pt"))
+            torch.save(model.state_dict(), checkpoint_path)
 
     # =========================================================
     # Phase 2: unfreeze layer4, fine-tune at a lower LR
@@ -116,10 +118,39 @@ def main():
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            torch.save(model.state_dict(), os.path.join(CHECKPOINT_DIR, "best.pt"))
+            torch.save(model.state_dict(), checkpoint_path)
 
     print(f"\nBest val accuracy: {best_val_acc:.4f}")
-    print(f"Best checkpoint saved to {os.path.join(CHECKPOINT_DIR, 'best.pt')}")
+    print(f"Best checkpoint saved to {checkpoint_path}")
+    return best_val_acc
+
+
+def main():
+    folds = get_kfold_datasets(FRAMES_DIR, k=K_FOLDS)
+
+    fold_accuracies = []
+    for fold_idx, (train_dataset, val_dataset) in enumerate(folds, start=1):
+        print(f"\n{'=' * 60}")
+        print(f"Fold {fold_idx}/{K_FOLDS}  "
+              f"(train={len(train_dataset)} videos, val={len(val_dataset)} videos)")
+        print(f"{'=' * 60}")
+
+        train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+        checkpoint_path = os.path.join(CHECKPOINT_DIR, f"fold{fold_idx}_best.pt")
+        best_val_acc = train_fold(train_loader, val_loader, checkpoint_path)
+        fold_accuracies.append(best_val_acc)
+
+    mean_acc = statistics.mean(fold_accuracies)
+    std_acc = statistics.stdev(fold_accuracies) if len(fold_accuracies) > 1 else 0.0
+
+    print(f"\n{'=' * 60}")
+    print("K-fold CV results")
+    print(f"{'=' * 60}")
+    for fold_idx, acc in enumerate(fold_accuracies, start=1):
+        print(f"  Fold {fold_idx}: {acc:.4f}")
+    print(f"Mean val accuracy: {mean_acc:.4f} +/- {std_acc:.4f}")
 
 
 if __name__ == "__main__":

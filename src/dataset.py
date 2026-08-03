@@ -125,6 +125,47 @@ def _stratified_split(all_samples, val_ratio, seed):
     return train_samples, val_samples
 
 
+def _stratified_kfold_splits(all_samples, k, seed):
+    """
+    Split each label's video list into k roughly-equal folds separately,
+    then combine per-fold so every fold keeps the drunk/sober ratio
+    roughly equal (same rationale as _stratified_split).
+
+    Returns a list of k (train_samples, val_samples) tuples.
+    """
+    rng = random.Random(seed)
+
+    # label_name -> list of k buckets (each a list of samples)
+    per_label_buckets = {}
+    for label_name, samples in all_samples.items():
+        samples = samples.copy()
+        rng.shuffle(samples)
+
+        if len(samples) < k:
+            raise ValueError(
+                f"Not enough '{label_name}' videos ({len(samples)}) for {k}-fold CV. "
+                f"Reduce k or add more data."
+            )
+
+        buckets = [[] for _ in range(k)]
+        for i, sample in enumerate(samples):
+            buckets[i % k].append(sample)
+        per_label_buckets[label_name] = buckets
+
+    folds = []
+    for fold_idx in range(k):
+        train_samples, val_samples = [], []
+        for buckets in per_label_buckets.values():
+            for bucket_idx, bucket in enumerate(buckets):
+                if bucket_idx == fold_idx:
+                    val_samples.extend(bucket)
+                else:
+                    train_samples.extend(bucket)
+        folds.append((train_samples, val_samples))
+
+    return folds
+
+
 class VideoDataset(Dataset):
     """
     Each item = one video's frame sequence + its drunk/sober label.
@@ -158,6 +199,14 @@ class VideoDataset(Dataset):
                 f"Try a smaller val_ratio or add more data."
             )
 
+    @classmethod
+    def from_samples(cls, samples):
+        """Build a dataset directly from a (video_dir, label_idx) list, bypassing
+        the frames_dir scan + split — used for k-fold CV folds."""
+        instance = cls.__new__(cls)
+        instance.samples = samples
+        return instance
+
     def __len__(self):
         return len(self.samples)
 
@@ -172,6 +221,27 @@ class VideoDataset(Dataset):
 
         sequence = frames_to_tensor(frame_paths)  # [NUM_FRAMES, 3, 224, 224]
         return sequence, label
+
+
+def get_kfold_datasets(frames_dir, k, seed=SPLIT_SEED):
+    """
+    Returns a list of k (train_dataset, val_dataset) VideoDataset pairs,
+    stratified by label the same way as the fixed train/val split.
+    """
+    all_samples = _collect_all_samples(frames_dir)
+
+    total_videos = sum(len(v) for v in all_samples.values())
+    if total_videos == 0:
+        raise RuntimeError(
+            f"No videos found under {frames_dir}/drunk or {frames_dir}/sober. "
+            f"Check the path and that preprocessing.py has been run."
+        )
+
+    folds = _stratified_kfold_splits(all_samples, k, seed)
+    return [
+        (VideoDataset.from_samples(train_samples), VideoDataset.from_samples(val_samples))
+        for train_samples, val_samples in folds
+    ]
 
 
 if __name__ == "__main__":
