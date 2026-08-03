@@ -35,7 +35,8 @@ BATCH_SIZE = 8
 PHASE1_EPOCHS = 15
 PHASE2_EPOCHS = 10
 PHASE1_LR = 1e-3
-PHASE2_LR = 1e-4
+PHASE2_LR = 1e-5
+PHASE2_WEIGHT_DECAY = 1e-4
 K_FOLDS = 5
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -104,8 +105,10 @@ def train_fold(train_loader, val_loader, checkpoint_path):
     print("\n=== Phase 2: fine-tuning layer4 ===")
     model.unfreeze_layer4()
 
-    optimizer = torch.optim.Adam(
-        filter(lambda p: p.requires_grad, model.parameters()), lr=PHASE2_LR
+    optimizer = torch.optim.AdamW(
+        filter(lambda p: p.requires_grad, model.parameters()),
+        lr=PHASE2_LR,
+        weight_decay=PHASE2_WEIGHT_DECAY,
     )
 
     for epoch in range(1, PHASE2_EPOCHS + 1):
