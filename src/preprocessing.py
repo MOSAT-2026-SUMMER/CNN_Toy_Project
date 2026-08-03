@@ -161,6 +161,10 @@ def main():
                 video_stem = os.path.splitext(video_name)[0]
                 output_dir = os.path.join(FRAMES_DIR, class_name, video_stem)
 
+                if os.path.isdir(output_dir) and os.listdir(output_dir):
+                    print(f"Skipping {video_path} (frames already exist)")
+                    continue
+
                 print(f"Processing {video_path}")
                 process_video(video_path, output_dir, face_detector)
 
