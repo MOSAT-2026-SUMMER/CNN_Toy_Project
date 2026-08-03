@@ -31,9 +31,9 @@ CHECKPOINT_DIR = "/content/checkpoints"
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 # ---- Hyperparameters ----
-BATCH_SIZE = 8
-PHASE1_EPOCHS = 15
-PHASE2_EPOCHS = 10
+BATCH_SIZE = 6
+PHASE1_EPOCHS = 10
+PHASE2_EPOCHS = 7
 PHASE1_LR = 1e-3
 PHASE2_LR = 1e-5
 PHASE2_WEIGHT_DECAY = 1e-4
