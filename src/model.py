@@ -41,6 +41,10 @@ class DrunkSoberNet(nn.Module):
         # part during Phase 1, where it's prone to overfitting first).
         self.dropout = nn.Dropout(dropout)
 
+        # Tracks which part of the backbone is currently being fine-tuned, so
+        # train() knows how much of it to pull back into eval mode (see below).
+        self._layer4_unfrozen = False
+
     def forward(self, x):
         # x: [B, T, 3, 224, 224]
         B, T, C, H, W = x.shape
@@ -67,6 +71,24 @@ class DrunkSoberNet(nn.Module):
         """Phase 2: unfreeze only layer4 (most task-specific features)."""
         for param in self.backbone.layer4.parameters():
             param.requires_grad = True
+        self._layer4_unfrozen = True
+
+    def train(self, mode=True):
+        """
+        Keep frozen parts of the backbone in eval mode even when the rest of
+        the model is in train mode, so their BatchNorm running stats stop
+        drifting on this dataset's small, correlated batches. requires_grad=False
+        only blocks gradient updates to conv weights — it does nothing to stop
+        BatchNorm's running_mean/running_var from updating on every forward
+        pass while the module is in train mode, which is a separate mechanism.
+        Without this, a "frozen" backbone still silently changes behavior.
+        """
+        super().train(mode)
+        if mode:
+            self.backbone.eval()
+            if self._layer4_unfrozen:
+                self.backbone.layer4.train()
+        return self
 
 
 if __name__ == "__main__":
