@@ -75,10 +75,23 @@ def run_epoch(model, loader, criterion, optimizer=None):
     return avg_loss, accuracy
 
 
-def train_fold(train_loader, val_loader, checkpoint_path):
+def compute_pos_weight(dataset):
+    """
+    BCEWithLogitsLoss pos_weight = n_neg / n_pos, computed from this fold's
+    training split (not the whole dataset) so it tracks whatever imbalance
+    that split actually has.
+    """
+    n_pos = sum(label for _, label in dataset.samples)
+    n_neg = len(dataset.samples) - n_pos
+    return n_neg / n_pos
+
+
+def train_fold(train_loader, val_loader, checkpoint_path, pos_weight):
     """Two-phase fine-tune of a fresh model on one fold. Returns best val accuracy."""
     model = DrunkSoberNet().to(DEVICE)
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.BCEWithLogitsLoss(
+        pos_weight=torch.tensor(pos_weight, device=DEVICE)
+    )
 
     # =========================================================
     # Phase 1: freeze backbone, train GRU + head only
@@ -146,7 +159,9 @@ def main():
         val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
         checkpoint_path = os.path.join(CHECKPOINT_DIR, f"fold{fold_idx}_best.pt")
-        best_val_acc = train_fold(train_loader, val_loader, checkpoint_path)
+        pos_weight = compute_pos_weight(train_dataset)
+        print(f"pos_weight={pos_weight:.4f}")
+        best_val_acc = train_fold(train_loader, val_loader, checkpoint_path, pos_weight)
         fold_accuracies.append(best_val_acc)
 
     mean_acc = statistics.mean(fold_accuracies)
